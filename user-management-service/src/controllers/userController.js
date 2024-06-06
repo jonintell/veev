@@ -5,7 +5,33 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-// Register a new user
+exports.loginUser = async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        let user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+        }
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+        }
+        const payload = { user: { id: user.id, isAdmin: user.isAdmin } };
+        jwt.sign(
+            payload,
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' },
+            (err, token) => {
+                if (err) throw err;
+                res.json({ token });
+            }
+        );
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server error');
+    }
+};
+
 exports.registerUser = async (req, res) => {
     const { name, email, password } = req.body;
     try {
@@ -13,9 +39,9 @@ exports.registerUser = async (req, res) => {
         if (user) {
             return res.status(400).json({ message: 'User already exists' });
         }
-        user = new User({ name, email, password });
+        user = new User({ name, email, password, isAdmin: false });
         await user.save();
-        const payload = { user: { id: user.id } };
+        const payload = { user: { id: user.id, isAdmin: user.isAdmin } };
         jwt.sign(
             payload,
             process.env.JWT_SECRET,
@@ -23,6 +49,33 @@ exports.registerUser = async (req, res) => {
             (err, token) => {
                 if (err) throw err;
                 res.status(201).json({ token });
+            }
+        );
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server error');
+    }
+};
+
+exports.loginUser = async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        let user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+        }
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+        }
+        const payload = { user: { id: user.id, isAdmin: user.isAdmin } };
+        jwt.sign(
+            payload,
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' },
+            (err, token) => {
+                if (err) throw err;
+                res.json({ token });
             }
         );
     } catch (err) {
@@ -42,13 +95,22 @@ exports.getUsers = async (req, res) => {
     }
 };
 
-// Update a user by ID
+// get Id from param and update name and email
 exports.updateUser = async (req, res) => {
     const { name, email } = req.body;
     try {
         const user = await User.findById(req.params.id);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+        if(user.isAdmin){
+            return res.status(404).json({ message: `User admin can't be modified` });
+        }
+        if (email && email !== user.email) {
+            const existingUser = await User.findOne({email: email});
+            if(existingUser){
+                return res.status(404).json({ message: `User with mail ${email} already exist` });
+            }
         }
         user.name = name || user.name;
         user.email = email || user.email;
@@ -60,12 +122,15 @@ exports.updateUser = async (req, res) => {
     }
 };
 
-// Delete a user by ID
+// get Id from param and delete user
 exports.deleteUser = async (req, res) => {
     try {
         const user = await User.findById(req.params.id);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
+        }
+        if(user.isAdmin){
+            return res.status(404).json({ message: `User admin can't be deleted` });
         }
         await user.remove();
         res.json({ message: 'User removed' });
